@@ -1,0 +1,7 @@
+# Binary output files/projects
+bin/*
+!bin/.gitkeep
+
+# Raycast output
+data/image.png
+
