@@ -1,3 +1,5 @@
+#ifndef INCLUDED_RAYCAST_H
+#define INCLUDED_RAYCAST_H
 
 struct RayVec3
 {
@@ -56,3 +58,4 @@ struct RayFramebuffer
 
 void raycast(RayFramebuffer *framebuffer, const RayScene *scene);
 
+#endif
