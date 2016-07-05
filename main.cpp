@@ -48,9 +48,9 @@ int parseOBJ(Model *model, FILE *file)
 				}
 
 				RayTriangle *tri = &tempTris[tempTriCount++];
-				tri->a = tempVerts[a];
-				tri->b = tempVerts[b];
-				tri->c = tempVerts[c];
+				tri->a = tempVerts[a - 1];
+				tri->b = tempVerts[b - 1];
+				tri->c = tempVerts[c - 1];
 			}
 		}
 	}
@@ -88,8 +88,20 @@ int main(int argc, char **argv)
 
 	// -- Scene setup
 	RayObject objects[1];
+
+#if 0
+	RayTriangle tt = {
+		{ -5.0f,  0.0f,  0.0f },
+		{  5.0f,  0.0f,  0.0f },
+		{  0.0f,  5.0f,  0.0f },
+	};
+	objects[0].triangles = &tt;
+	objects[0].numTriangles = 1;
+#else
 	objects[0].triangles = monkey.triangles;
 	objects[0].numTriangles = monkey.numTriangles;
+#endif
+
 
 	RayPointLight pointLights[1];
 	pointLights[0].pos.x = 3.0f;
@@ -110,10 +122,10 @@ int main(int argc, char **argv)
 
 	scene.camera.pos.x = 0.0f;
 	scene.camera.pos.y = 0.0f;
-	scene.camera.pos.z = -10.0f;
+	scene.camera.pos.z = 3.0f;
 	scene.camera.dir.x = 0.0f;
 	scene.camera.dir.y = 0.0f;
-	scene.camera.dir.z = 1.0f;
+	scene.camera.dir.z = -1.0f;
 	scene.camera.up.x = 0.0f;
 	scene.camera.up.y = 1.0f;
 	scene.camera.up.z = 0.0f;
@@ -121,8 +133,8 @@ int main(int argc, char **argv)
 
 	// -- Raycast
 	RayFramebuffer framebuffer;
-	framebuffer.width = 800;
-	framebuffer.height = 600;
+	framebuffer.width = 400;
+	framebuffer.height = 300;
 	framebuffer.pixelData = (unsigned char*)malloc(framebuffer.width * framebuffer.height * 3);
 
 	for (unsigned i = 0; i < framebuffer.width * framebuffer.height * 3; i += 3)
