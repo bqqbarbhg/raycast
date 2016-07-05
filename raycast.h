@@ -31,18 +31,35 @@ struct RayCamera
 	float fov;
 };
 
+struct RayMaterial
+{
+	RayColor color;
+	float reflectivity;
+};
+
 struct RayObject
 {
 	RayTriangle *triangles;
 	unsigned numTriangles;
 
-	RayColor color;
+	RayMaterial *material;
+};
+
+struct RaySphere
+{
+	RayVec3 origin;
+	float radius;
+
+	RayMaterial *material;
 };
 
 struct RayScene
 {
 	RayObject *objects;
 	unsigned numObjects;
+
+	RaySphere *spheres;
+	unsigned numSpheres;
 
 	RayPointLight *pointLights;
 	unsigned numPointLights;

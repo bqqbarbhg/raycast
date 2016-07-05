@@ -49,6 +49,11 @@ Vec3 operator*(float a, const Vec3& b)
 	return vec3(a * b.x, a * b.y, a * b.z);
 }
 
+Vec3 operator*(const Vec3& a, const Vec3& b)
+{
+	return vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
 float dot(const Vec3& a, const Vec3& b)
 {
 	return a.x*b.x + a.y*b.y + a.z*b.z;
@@ -75,6 +80,11 @@ Vec3 cross(const Vec3& a, const Vec3& b)
 		+ (a.y*b.z - a.z*b.y),
 		- (a.x*b.z - a.z*b.x),
 		+ (a.x*b.y - a.y*b.x));
+}
+
+Vec3 lerp(const Vec3& a, const Vec3& b, float t)
+{
+	return (1.0f - t) * a + t * b;
 }
 
 bool rayToPlane(
@@ -140,6 +150,144 @@ bool rayToTri(
 	return true;
 }
 
+bool rayToSphere(
+	float *outNear,
+	float *outFar,
+	const Vec3& rayPos,
+	const Vec3& rayDir,
+	const Vec3& origin,
+	float radius)
+{
+	Vec3 diff = rayPos - origin;
+
+	RAY_ASSERT(fabs(length(rayDir) - 1.0f) < EPSILON);
+
+	float ud = dot(diff, rayDir);
+	float uu = dot(diff, diff);
+
+	float discriminant = ud*ud - uu + radius*radius;
+	if (discriminant < 0.0f)
+		return false;
+
+	float disc = sqrtf(discriminant);
+
+	*outNear = -ud - disc;
+	*outFar = -ud + disc;
+	return true;
+}
+
+extern float hackT;
+
+Vec3 castRay(const RayScene *scene, const Vec3& rayPos, const Vec3& rayDir, int nBounce)
+{
+	float nearestDist = 10000000.0f;
+	Vec3 nearestNormal;
+	RayMaterial *nearestMaterial = 0;
+
+	for (unsigned oi = 0; oi < scene->numObjects; oi++)
+	{
+		RayObject *obj = &scene->objects[oi];
+		for (unsigned ti = 0; ti < obj->numTriangles; ti++)
+		{
+			float t;
+			Vec2 uv;
+
+			bool hit = rayToTri(
+				&t, &uv,
+				rayPos,
+				rayDir,
+				vecFromRay3(obj->triangles[ti].a),
+				vecFromRay3(obj->triangles[ti].b),
+				vecFromRay3(obj->triangles[ti].c));
+
+			if (hit && t < nearestDist)
+			{
+				nearestDist = t;
+
+				RayTriangle *tri = &obj->triangles[ti];
+				Vec3 a = vecFromRay3(tri->a);
+				Vec3 b = vecFromRay3(tri->b);
+				Vec3 c = vecFromRay3(tri->c);
+				Vec3 e0 = b - a;
+				Vec3 e1 = c - a;
+				nearestNormal = normalize(cross(e0, e1));
+
+				nearestMaterial = obj->material;
+			}
+		}
+	}
+
+	for (unsigned si = 0; si < scene->numSpheres; si++)
+	{
+		RaySphere *sphere = &scene->spheres[si];
+		float tNear, tFar;
+
+		bool hit = rayToSphere(
+			&tNear,
+			&tFar,
+			rayPos,
+			rayDir,
+			vecFromRay3(sphere->origin),
+			sphere->radius);
+
+		if (hit && tNear >= 0 && tNear < nearestDist)
+		{
+			nearestDist = tNear;
+
+			Vec3 pos = rayPos + rayDir * tNear;
+			nearestNormal = normalize(pos - vecFromRay3(sphere->origin));
+
+			nearestMaterial = sphere->material;
+		}
+	}
+
+	// HACK floor
+	{
+		float t;
+		bool hit = rayToPlane(
+			&t,
+			rayPos,
+			rayDir,
+			vec3(0.0f, 1.0f, 0.0f),
+			-5.0f);
+
+		static RayMaterial mats[] = {
+			{ 0.0f, 0.0f, 0.0f, 0.0f },
+			{ 0xff / 255.0f, 0x78 / 255.0f, 0x99 / 255.0f, 0.0f },
+		};
+
+		if (hit && t >= 0.0f && t < nearestDist)
+		{
+			nearestDist = t;
+			nearestNormal = vec3(0.0f, 1.0f, 0.0f);
+			Vec3 p = (rayPos + rayDir * t) * 0.5f;
+			int cell = ((int)floorf(p.x) ^ (int)floorf(p.z + hackT)) & 1;
+			nearestMaterial = &mats[cell];
+		}
+	}
+
+	if (nearestMaterial != 0)
+	{
+		float light = dot(nearestNormal, vec3(0.0f, 1.0f, 0.0f)) * 0.5f + 0.5f;
+		Vec3 col = vec3(light, light, light) * vec3(nearestMaterial->color.r, nearestMaterial->color.g, nearestMaterial->color.b);
+
+		if (nearestMaterial->reflectivity > EPSILON && nBounce < 3)
+		{
+			Vec3 pos = rayPos + rayDir * nearestDist;
+			float dt = dot(rayDir, nearestNormal);
+			Vec3 reflect = normalize(rayDir - 2.0f * dt * nearestNormal);
+			Vec3 bounce = castRay(scene, pos + reflect * 0.0001f, reflect, nBounce + 1);
+			col = lerp(col, bounce, nearestMaterial->reflectivity);
+		}
+
+		return col;
+	}
+	else
+	{
+		return vec3(0x00 / 255.0f, 0x80 / 255.0f, 0x80 / 255.0f);
+	}
+}
+
 void raycast(RayFramebuffer *framebuffer, const RayScene *scene)
 {
 	float aspectRatio = (float)framebuffer->width / (float)framebuffer->height;
@@ -159,62 +307,15 @@ void raycast(RayFramebuffer *framebuffer, const RayScene *scene)
 	{
 		for (unsigned x = 0; x < framebuffer->width; x++)
 		{
-			float nearestDist = 10000000.0f;
-			unsigned nearestObject = ~0;
-			unsigned nearestTri = ~0;
-
 			Vec3 rayPos = vecFromRay3(scene->camera.pos);
-			Vec3 rayDir = normalize(topLeft + stepX * x + stepY * y);
+			Vec3 rayDir = normalize(topLeft + stepX * (float)x + stepY * (float)y);
 
-			for (unsigned oi = 0; oi < scene->numObjects; oi++)
-			{
-				RayObject *obj = &scene->objects[oi];
-				for (unsigned ti = 0; ti < obj->numTriangles; ti++)
-				{
-					float t;
-					Vec2 uv;
-
-					bool hit = rayToTri(
-						&t, &uv,
-						rayPos,
-						rayDir,
-						vecFromRay3(obj->triangles[ti].a),
-						vecFromRay3(obj->triangles[ti].b),
-						vecFromRay3(obj->triangles[ti].c));
-
-					if (hit && t < nearestDist)
-					{
-						nearestDist = t;
-						nearestObject = oi;
-						nearestTri = ti;
-					}
-				}
-			}
+			Vec3 col = castRay(scene, rayPos, rayDir, 0);
 
 			unsigned pi = (x + y * framebuffer->width) * 3;
-			if (nearestObject != ~0)
-			{
-				RayObject *obj = &scene->objects[nearestObject];
-				RayTriangle *tri = &obj->triangles[nearestTri];
-				Vec3 a = vecFromRay3(tri->a);
-				Vec3 b = vecFromRay3(tri->b);
-				Vec3 c = vecFromRay3(tri->c);
-				Vec3 e0 = b - a;
-				Vec3 e1 = c - a;
-				Vec3 normal = normalize(cross(e0, e1));
-				float light = dot(normal, vec3(0.0f, 1.0f, 0.0f)) * 0.5f + 0.5f;
-				unsigned char val = (unsigned char)(light * 255.0f);
-
-				framebuffer->pixelData[pi + 0] = val;
-				framebuffer->pixelData[pi + 1] = val;
-				framebuffer->pixelData[pi + 2] = val;
-			}
-			else
-			{
-				framebuffer->pixelData[pi + 0] = 0x64;
-				framebuffer->pixelData[pi + 1] = 0x95;
-				framebuffer->pixelData[pi + 2] = 0xED;
-			}
+			framebuffer->pixelData[pi + 0] = (unsigned char)(col.x * 255.0f);
+			framebuffer->pixelData[pi + 1] = (unsigned char)(col.y * 255.0f);
+			framebuffer->pixelData[pi + 2] = (unsigned char)(col.z * 255.0f);
 		}
 	}
 }

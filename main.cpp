@@ -67,6 +67,8 @@ void freeModel(Model *model)
 	free(model->triangles);
 }
 
+float hackT = 0.0f;
+
 int main(int argc, char **argv)
 {
 	// -- Object import
@@ -84,10 +86,14 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
+	if (argc > 2)
+		hackT = atof(argv[2]);
+
 	fclose(monkeyFile);
 
 	// -- Scene setup
 	RayObject objects[1];
+	RayMaterial mat = { 1.0f, 1.0f, 1.0f, 0.8f };
 
 #if 0
 	RayTriangle tt = {
@@ -101,7 +107,7 @@ int main(int argc, char **argv)
 	objects[0].triangles = monkey.triangles;
 	objects[0].numTriangles = monkey.numTriangles;
 #endif
-
+	objects[0].material = &mat;
 
 	RayPointLight pointLights[1];
 	pointLights[0].pos.x = 3.0f;
@@ -114,6 +120,16 @@ int main(int argc, char **argv)
 
 	RayScene scene;
 
+	RaySphere spheres[] = {
+		{
+			{ 0.0f, 3.0f, -3.0f },
+			3.0f,
+			&mat,
+		},
+	};
+	scene.spheres = spheres;
+	scene.numSpheres = sizeof(spheres) / sizeof(*spheres);
+
 	scene.objects = objects;
 	scene.numObjects = sizeof(objects) / sizeof(*objects);
 
@@ -122,7 +138,7 @@ int main(int argc, char **argv)
 
 	scene.camera.pos.x = 0.0f;
 	scene.camera.pos.y = 0.0f;
-	scene.camera.pos.z = 3.0f;
+	scene.camera.pos.z = 5.0f;
 	scene.camera.dir.x = 0.0f;
 	scene.camera.dir.y = 0.0f;
 	scene.camera.dir.z = -1.0f;
@@ -146,18 +162,22 @@ int main(int argc, char **argv)
 
 	raycast(&framebuffer, &scene);
 
+	const char *file = "image.png";
+	if (argc > 1)
+		file = argv[1];
+
 	// -- Image save
 	int ret = stbi_write_png(
-		"image.png",
+		file,
 		(int)framebuffer.width,
 		(int)framebuffer.height,
 		3,
 		framebuffer.pixelData,
 		framebuffer.width * 3);
 
-	if (ret != 0)
+	if (ret == 0)
 	{
-		fprintf(stderr, "Failed to write output: %d\n", ret);
+		fprintf(stderr, "Failed to write output!\n");
 	}
 
 	free(framebuffer.pixelData);
