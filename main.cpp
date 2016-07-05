@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 	}
 
 	if (argc > 2)
-		hackT = atof(argv[2]);
+		hackT = (float)atof(argv[2]);
 
 	fclose(monkeyFile);
 
